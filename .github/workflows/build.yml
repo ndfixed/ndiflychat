@@ -1,0 +1,166 @@
+name: Build Web-to-APK with Permissions
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Unzip Website Files
+        run: |
+          mkdir -p web_files
+          unzip -o ndiflychat.zip -d web_files/
+
+      - name: Set up Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK & Build Tools
+        uses: android-actions/setup-android@v3
+
+      - name: Create Android Native Wrapper Project
+        run: |
+          mkdir -p android_project/app/src/main/assets
+          mkdir -p android_project/app/src/main/java/com/ndiflychat/app
+
+          # Copy website files to assets
+          cp -r web_files/* android_project/app/src/main/assets/
+
+          # Create AndroidManifest.xml with Permissions
+          cat << 'EOF' > android_project/app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.ndiflychat.app">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.CAMERA" />
+              <uses-permission android:name="android.permission.RECORD_AUDIO" />
+              <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+              <application
+                  android:allowBackup="true"
+                  android:icon="@mipmap/ic_launcher"
+                  android:label="ndiflychat"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+                  
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          # Create MainActivity.java with WebRTC Support
+          cat << 'EOF' > android_project/app/src/main/java/com/ndiflychat/app/MainActivity.java
+          package com.ndiflychat.app;
+
+          import android.Manifest;
+          import android.content.pm.PackageManager;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.webkit.PermissionRequest;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import androidx.appcompat.app.AppCompatActivity;
+          import androidx.core.app.ActivityCompat;
+          import androidx.core.content.ContextCompat;
+
+          public class MainActivity extends AppCompatActivity {
+              private static final int PERMISSION_REQUEST_CODE = 1001;
+              private WebView webView;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  webView = new WebView(this);
+                  setContentView(webView);
+
+                  WebSettings webSettings = webView.getSettings();
+                  webSettings.setJavaScriptEnabled(true);
+                  webSettings.setDomStorageEnabled(true);
+                  webSettings.setMediaPlaybackRequiresUserGesture(false);
+
+                  webView.setWebViewClient(new WebViewClient());
+
+                  // Grant WebRTC permissions (Camera & Microphone) inside WebView
+                  webView.setWebChromeClient(new WebChromeClient() {
+                      @Override
+                      public void onPermissionRequest(final PermissionRequest request) {
+                          runOnUiThread(() -> request.grant(request.getResources()));
+                      }
+                  });
+
+                  requestAppPermissions();
+
+                  // Load HTML file from assets
+                  webView.loadUrl("file:///android_asset/index.html");
+              }
+
+              private void requestAppPermissions() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                      String[] permissions = {
+                          Manifest.permission.CAMERA,
+                          Manifest.permission.RECORD_AUDIO,
+                          Manifest.permission.POST_NOTIFICATIONS
+                      };
+
+                      boolean needRequest = false;
+                      for (String perm : permissions) {
+                          if (ContextCompat.checkSelfPermission(this, perm) != PackageManager.PERMISSION_GRANTED) {
+                              needRequest = true;
+                              break;
+                          }
+                      }
+
+                      if (needRequest) {
+                          ActivityCompat.requestPermissions(this, permissions, PERMISSION_REQUEST_CODE);
+                      }
+                  }
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (webView.canGoBack()) {
+                      webView.goBack();
+                  } else {
+                      super.onBackPressed();
+                  }
+              }
+          }
+          EOF
+
+      - name: Build APK via Cordova / Capacitor
+        run: |
+          npm install -g cordova
+          cordova create build_apk com.ndiflychat.app ndiflychat
+          cd build_apk
+          cordova platform add android
+          cp -r ../web_files/* www/
+          cordova build android --debug
+
+      - name: Upload Finished APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ndiflychat-app
+          path: build_apk/platforms/android/app/build/outputs/apk/debug/app-debug.apk
+          
