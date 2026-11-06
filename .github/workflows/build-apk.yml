@@ -13,33 +13,43 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build NdiflyChat APK
+    name: Build NdiflyChat Android APK
     runs-on: ubuntu-24.04
 
     steps:
+      # 1. Download repository
       - name: Checkout Repository
         uses: actions/checkout@v5
 
+      # 2. Node.js 24
       - name: Setup Node.js 24
         uses: actions/setup-node@v5
         with:
           node-version: '24'
+          cache: npm
 
-      - name: Setup Java 17
+      # 3. Java 21
+      - name: Setup Java 21
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
+      # 4. Setup Android SDK
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
       - name: Install Android SDK Packages
         run: |
-          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
           yes | sdkmanager --licenses
 
-      - name: Extract ZIP
+      # 5. Extract ZIP
+      - name: Extract NdiflyChat ZIP
         run: |
           if [ ! -f ndiflychat.zip ]; then
             echo "ERROR: ndiflychat.zip tidak ditemukan!"
@@ -49,53 +59,79 @@ jobs:
           mkdir -p source
           unzip -q ndiflychat.zip -d source
 
-      - name: Detect Android Project
-        id: project
+      # 6. Find website index.html
+      - name: Detect Website Files
+        id: website
         run: |
-          GRADLEW=$(find source -type f -name gradlew -print -quit)
+          INDEX_FILE=$(find source -type f -iname "index.html" -print -quit)
 
-          if [ -z "$GRADLEW" ]; then
-            echo "ERROR: gradlew tidak ditemukan dalam ZIP!"
+          if [ -z "$INDEX_FILE" ]; then
+            echo "ERROR: index.html tidak ditemukan!"
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$GRADLEW")
-          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          WEB_ROOT=$(dirname "$INDEX_FILE")
 
-      - name: Install Dependencies
-        working-directory: ${{ steps.project.outputs.dir }}
+          echo "Website ditemukan: $WEB_ROOT"
+          echo "dir=$WEB_ROOT" >> "$GITHUB_OUTPUT"
+
+      # 7. Create Capacitor Project
+      - name: Create Capacitor Project
         run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          elif [ -f package.json ]; then
-            npm install
-          fi
+          mkdir -p capacitor-project
+          cd capacitor-project
 
-      - name: Build Web Assets
-        working-directory: ${{ steps.project.outputs.dir }}
+          npm init -y
+
+          npm install --save-exact \
+            @capacitor/core@7 \
+            @capacitor/android@7
+
+          npm install --save-dev --save-exact \
+            @capacitor/cli@7
+
+      # 8. Copy Website
+      - name: Copy Website Assets
         run: |
-          if [ -f package.json ] && npm run | grep -q 'build'; then
-            npm run build
-          fi
+          mkdir -p capacitor-project/www
 
-      - name: Sync Capacitor
-        working-directory: ${{ steps.project.outputs.dir }}
+          cp -a "${{ steps.website.outputs.dir }}/." \
+            capacitor-project/www/
+
+      # 9. Configure Capacitor
+      - name: Configure NdiflyChat
+        working-directory: capacitor-project
         run: |
-          if [ -d android ] && { [ -f capacitor.config.ts ] || [ -f capacitor.config.json ] || [ -f capacitor.config.js ]; }; then
-            npx cap sync android
-          fi
+          npx cap init "NdiflyChat" "com.ndiflychat.app" --web-dir=www
 
-      - name: Build Release APK
-        working-directory: ${{ steps.project.outputs.dir }}
+      # 10. Generate Android Project
+      - name: Generate Android Project
+        working-directory: capacitor-project
+        run: |
+          npx cap add android
+
+      # 11. Sync Android
+      - name: Sync Android Project
+        working-directory: capacitor-project
+        run: |
+          npx cap sync android
+
+      # 12. Build APK
+      - name: Build NdiflyChat APK
+        working-directory: capacitor-project/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
 
-      - name: Upload APK
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace
+
+      # 13. Upload APK
+      - name: Upload NdiflyChat APK
         uses: actions/upload-artifact@v6
         with:
           name: NdiflyChat-APK
-          path: ${{ steps.project.outputs.dir }}/**/build/outputs/apk/release/*.apk
+          path: capacitor-project/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
           
