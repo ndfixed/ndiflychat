@@ -1,4 +1,4 @@
-name: Build Web-to-APK with Permissions (Node 24 Mode)
+name: Build Web-to-APK (Node 24)
 
 on:
   push:
@@ -12,11 +12,11 @@ jobs:
       ACTIONS_RUNNER_FORCE_NODE24: "true"
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4.2.2
 
       - name: Setup Node.js 24 Environment
-        uses: actions/setup-node@v4.4.0
+        uses: actions/setup-node@v4.2.0
         with:
           node-version: '24'
 
@@ -64,18 +64,5 @@ jobs:
               <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
             `;
-            manifest = manifest.replace('</manifest>', `${permissions}</manifest>`);
-            fs.writeFileSync(manifestPath, manifest);
-          }
-          EOF
-          node platform_manifest_patch.js
-          
-          # Build APK versi Debug
-          cordova build android --debug
-
-      - name: Upload Finished APK
-        uses: actions/upload-artifact@v4.6.1
-        with:
-          name: ndiflychat-app
-          path: build_apk/platforms/android/app/build/outputs/apk/debug/app-debug.apk
-          
+            manifest = manifest
+            
