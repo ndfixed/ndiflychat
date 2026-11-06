@@ -1,4 +1,4 @@
-name: Build Web-to-APK with Permissions
+name: Build Web-to-APK with Permissions (Node 24 Mode)
 
 on:
   push:
@@ -9,16 +9,16 @@ jobs:
   build-apk:
     runs-on: ubuntu-latest
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE20: "false"
+      ACTIONS_RUNNER_FORCE_NODE24: "true"
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4.2.2
 
-      - name: Setup Node.js Environment
+      - name: Setup Node.js 24 Environment
         uses: actions/setup-node@v4.4.0
         with:
-          node-version: '22'
+          node-version: '24'
 
       - name: Unzip Website Files
         run: |
