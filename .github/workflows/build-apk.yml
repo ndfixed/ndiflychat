@@ -1,3 +1,4 @@
+
 name: Build NdiflyChat Android APK
 
 on:
@@ -6,6 +7,9 @@ on:
     paths:
       - 'ndiflyChat.zip'
       - '.github/workflows/build-apk.yml'
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -19,29 +23,51 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install ZIP tools
+        run: sudo apt-get update && sudo apt-get install -y unzip
 
       - name: Extract website from ZIP
         run: |
           set -e
+
+          if [ ! -f ndiflyChat.zip ]; then
+            echo "ERROR: ndiflyChat.zip tidak ditemukan."
+            exit 1
+          fi
+
           unzip -q ndiflyChat.zip -d extracted
+
           INDEX_FILE=$(find extracted -type f -name index.html -print -quit)
+
           if [ -z "$INDEX_FILE" ]; then
             echo "ERROR: index.html tidak ditemukan di ZIP."
             exit 1
           fi
+
           WEB_ROOT=$(dirname "$INDEX_FILE")
+
           mkdir -p www
           cp -a "$WEB_ROOT"/. www/
+
           echo "Website root: $WEB_ROOT"
+          echo "Website files:"
           ls -la www
 
       - name: Configure Capacitor
         run: |
           set -e
+
           npm init -y
-          npm install @capacitor/core @capacitor/android
-          npm install --save-dev @capacitor/cli @capacitor/assets
+
+          npm install @capacitor/core@latest @capacitor/android@latest
+          npm install --save-dev @capacitor/cli@latest @capacitor/assets@latest
 
           cat > capacitor.config.json <<'EOF'
           {
@@ -55,27 +81,41 @@ jobs:
           EOF
 
           mkdir -p resources
-          cp www/assets/icon-512.png resources/icon.png
+
+          if [ -f www/assets/icon-512.png ]; then
+            cp www/assets/icon-512.png resources/icon.png
+          elif [ -f www/icon-512.png ]; then
+            cp www/icon-512.png resources/icon.png
+          else
+            echo "WARNING: Icon tidak ditemukan. Menggunakan icon default."
+          fi
+
           npx cap add android
-          npx capacitor-assets generate --android
+
+          if [ -f resources/icon.png ]; then
+            npx capacitor-assets generate --android
+          fi
+
           npx cap sync android
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-
-      - name: Build debug APK
+      - name: Build Android APK
         run: |
+          set -e
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Rename APK
+        run: |
+          mkdir -p release
+          cp android/app/build/outputs/apk/debug/app-debug.apk \
+             release/NdiflyChat.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NdiflyChat-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: NdiflyChat-Android-APK
+          path: release/NdiflyChat.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
+          
