@@ -21,7 +21,14 @@ jobs:
       - name: Unzip Website Files
         run: |
           mkdir -p web_files
-          unzip -o ndiflychat.zip -d web_files/
+          if [ -f ndiflyChat.zip ]; then
+            unzip -o ndiflyChat.zip -d web_files/
+          elif [ -f ndiflychat.zip ]; then
+            unzip -o ndiflychat.zip -d web_files/
+          else
+            # Mencari file zip apa saja yang ada di root repositori
+            unzip -o *.zip -d web_files/
+          fi
 
       - name: Set up Java JDK 17
         uses: actions/setup-java@v4.7.0
