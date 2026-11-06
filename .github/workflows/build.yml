@@ -1,4 +1,4 @@
-name: Build Web-to-APK with Permissions
+name: Build Web-to-APK with Permissions (Node 24 Mode)
 
 on:
   push:
@@ -8,10 +8,17 @@ on:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
+    env:
+      ACTIONS_RUNNER_FORCE_NODE24: "true"
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4.2.2
+
+      - name: Setup Node.js 24 Environment
+        uses: actions/setup-node@v4.2.0
+        with:
+          node-version: '24'
 
       - name: Unzip Website Files
         run: |
@@ -27,11 +34,6 @@ jobs:
       - name: Setup Android SDK & Build Tools
         uses: android-actions/setup-android@v3
 
-      - name: Setup Node.js Environment
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
       - name: Build APK via Cordova
         run: |
           npm install -g cordova
@@ -42,7 +44,7 @@ jobs:
           # Salin file web ke folder Cordova
           cp -r ../web_files/* www/
           
-          # Tambahkan konfigurasi izin langsung ke AndroidManifest.xml
+          # Inject izin Kamera, Mikrofon, dan Notifikasi ke AndroidManifest.xml
           cat << 'EOF' > platform_manifest_patch.js
           const fs = require('fs');
           const manifestPath = 'platforms/android/app/src/main/AndroidManifest.xml';
@@ -52,5 +54,22 @@ jobs:
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
               <uses-permission android:name="android.permission.CAMERA" />
-              <uses-permission android:name="android.permission.RECORD
-              
+              <uses-permission android:name="android.permission.RECORD_AUDIO" />
+              <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+            `;
+            manifest = manifest.replace('</manifest>', `${permissions}</manifest>`);
+            fs.writeFileSync(manifestPath, manifest);
+          }
+          EOF
+          node platform_manifest_patch.js
+          
+          # Build APK versi Debug
+          cordova build android --debug
+
+      - name: Upload Finished APK
+        uses: actions/upload-artifact@v4.6.1
+        with:
+          name: ndiflychat-app
+          path: build_apk/platforms/android/app/build/outputs/apk/debug/app-debug.apk
+          
