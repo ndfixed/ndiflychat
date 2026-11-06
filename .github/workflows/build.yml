@@ -8,6 +8,8 @@ on:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE20: "false"
 
     steps:
       - name: Checkout repository
@@ -26,7 +28,6 @@ jobs:
           elif [ -f ndiflychat.zip ]; then
             unzip -o ndiflychat.zip -d web_files/
           else
-            # Mencari file zip apa saja yang ada di root repositori
             unzip -o *.zip -d web_files/
           fi
 
@@ -37,7 +38,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Android SDK & Build Tools
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v3.0.0
 
       - name: Build APK via Cordova
         run: |
