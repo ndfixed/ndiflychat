@@ -1,119 +1,114 @@
 
-name: Build NdiflyChat Android APK
+name: Build NdiflyChat APK
 
 on:
-  workflow_dispatch:
   push:
-    paths:
-      - 'ndiflyChat.zip'
-      - '.github/workflows/build-apk.yml'
+    branches: ["main", "master"]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  build-apk:
+    name: Build Android APK
+    runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout repository
+      # 1. Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v7
 
-      - name: Setup Node.js
+      # 2. Setup Node.js 24
+      - name: Setup Node.js 24
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "24"
           package-manager-cache: false
 
-      - name: Setup Java
+      # 3. Verify Node.js
+      - name: Verify Environment
+        run: |
+          echo "Node.js version:"
+          node --version
+          npm --version
+          echo "Operating System:"
+          cat /etc/os-release | head -n 3
+
+      # 4. Setup Java
+      - name: Setup Java JDK 17
         uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: "17"
 
-      - name: Extract website from ZIP
+      # 5. Setup Android SDK
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      # 6. Extract Website
+      - name: Extract Website ZIP
         run: |
-          set -e
+          mkdir -p web_files
 
-          test -f ndiflyChat.zip || {
-            echo "ERROR: ndiflyChat.zip tidak ditemukan"
+          ZIP_FILE=$(find . -maxdepth 1 -iname "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: Website ZIP not found!"
             exit 1
-          }
+          fi
 
-          unzip -q ndiflyChat.zip -d extracted
+          echo "Extracting: $ZIP_FILE"
+          unzip -o "$ZIP_FILE" -d web_files/
 
-          INDEX_FILE=$(find extracted -type f -name index.html -print -quit)
+          INDEX_FILE=$(find web_files -name index.html -type f | head -n 1)
 
           if [ -z "$INDEX_FILE" ]; then
-            echo "ERROR: index.html tidak ditemukan"
+            echo "ERROR: index.html not found!"
             exit 1
           fi
 
-          WEB_ROOT=$(dirname "$INDEX_FILE")
+          WEB_DIR=$(dirname "$INDEX_FILE")
+          echo "Website directory: $WEB_DIR"
 
-          mkdir -p www
-          cp -a "$WEB_ROOT"/. www/
+          mkdir -p build_apk/www
 
-          echo "Website berhasil diekstrak"
-          ls -la www
+          cp -r "$WEB_DIR"/. build_apk/www/
 
-      - name: Configure Capacitor
+      # 7. Install Cordova
+      - name: Install Cordova
         run: |
-          set -e
+          npm install -g cordova
+          cordova --version
 
-          npm init -y
-
-          npm install @capacitor/core@latest @capacitor/android@latest
-          npm install --save-dev @capacitor/cli@latest @capacitor/assets@latest
-
-          cat > capacitor.config.json <<'EOF'
-          {
-            "appId": "com.ndifly.chat",
-            "appName": "NdiflyChat",
-            "webDir": "www",
-            "android": {
-              "allowMixedContent": false
-            }
-          }
-          EOF
-
-          mkdir -p resources
-
-          if [ -f www/assets/icon-512.png ]; then
-            cp www/assets/icon-512.png resources/icon.png
-          elif [ -f www/icon-512.png ]; then
-            cp www/icon-512.png resources/icon.png
-          else
-            echo "Icon khusus tidak ditemukan, memakai icon default"
-          fi
-
-          npx cap add android
-
-          if [ -f resources/icon.png ]; then
-            npx capacitor-assets generate --android
-          fi
-
-          npx cap sync android
-
-      - name: Build Android APK
+      # 8. Create Android Project
+      - name: Create Cordova Project
         run: |
-          set -e
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          cordova create build_apk \
+            com.ndiflychat.app \
+            NdiflyChat
 
-      - name: Prepare APK
+      # 9. Configure Android
+      - name: Configure Android Platform
+        working-directory: build_apk
         run: |
-          mkdir -p release
+          cordova platform add android
 
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
-             release/NdiflyChat.apk
+          echo "Installed platforms:"
+          cordova platform ls
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v6
+      # 10. Build APK
+      - name: Build Debug APK
+        working-directory: build_apk
+        run: |
+          cordova build android --debug
+
+      # 11. Upload APK
+      - name: Upload NdiflyChat APK
+        uses: actions/upload-artifact@v7
         with:
-          name: NdiflyChat-Android-APK
-          path: release/NdiflyChat.apk
+          name: NdiflyChat-APK
+          path: build_apk/platforms/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
           
